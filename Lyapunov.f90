@@ -7,9 +7,8 @@ implicit none
 	integer :: i, j, ijk, j0, j1, j2, it	!counter
 	real(8), external :: f	!function to calculate
 	real(8), parameter :: a = 10., b = 28., c = 2.	!parameter of the function
-	real(8), dimension(3) :: lamda, temp_lamda, lyn, cc, dd
+	real(8), dimension(3) :: lyn, cc, dd
 	real(8), dimension(3,3) :: ot, QQ, RR, Rt, Qt
-	integer, parameter :: ni = 3
 	LOGICAL sing
 
 	
@@ -25,7 +24,8 @@ implicit none
 	end do
 
 	h=0.001
-	
+
+!	Jacobian Matrix	
 	DF(1, 1) = -a
 	DF(1, 2) = a
 	DF(1, 3) = 0
@@ -33,7 +33,8 @@ implicit none
 	DF(3, 3) = -c
 	
 	ijk = 0
-		
+
+!	Solve equations using RK4	
 	do i = 1, 10000000
 
 		kx1 = f(1, xx, yy, zz, a, b, c)
@@ -87,67 +88,64 @@ implicit none
 		if (i > 5000000) then
 			ijk = ijk + 1
 			o = o + h * (ko1 + 2 * ko2 + 2 * ko3 + ko4) / 6
-			
+
 			Ot = matmul(o, QQ)
-			call ddqrdcmp(Ot,ni,ni,cc,dd,sing)
 			
-			do j=1,ni-1
-				Rt(j,j)=dd(j)
-				do j1=j+1,ni
-					Rt(j,j1)=Ot(j,j1)
-					Ot(j,j1)=0
+!			QR decompostion
+			call ddqrdcmp(Ot, 3, cc, dd, sing)
+			
+			do j=1, 2
+				Rt(j,j) = dd(j)
+				do j1 = j+1, 3
+					Rt(j, j1) = Ot(j, j1)
+					Ot(j, j1) = 0
 				end do
 			end do
-			j=ni
-			Rt(j,j)=dd(j)
-			do j=1,ni
-				do j1=1,ni
-					QQ(j1,j)=0
-				end do
+			j = 3
+			Rt(j, j) = dd(j)
+			
+			QQ = 0
+			do j=1,3
 				QQ(j,j)=1
 			end do
-
-			do j=1,ni-1
-				do j1=1,ni
-					do j2=1,ni
-						Qt(j1,j2)=-Ot(j1,j)*Ot(j2,j)/cc(j)
-						if (j1 == j2) Qt(j1,j2)=Qt(j1,j2)+1
+			
+			do j = 1, 2
+				do j1=1, 3
+					do j2=1, 3
+						Qt(j1, j2) = -Ot(j1, j) * Ot(j2, j) / cc(j)
+						if (j1 == j2) then
+							Qt(j1, j2) = Qt(j1, j2)+1
+						end if
 					end do
 				end do
-					
 				QQ = matmul(QQ, Qt)
 			end do
 
-			do j=1,ni
-				RR(j,j)=RR(j,j)+log(abs(Rt(j,j)))
+			do j=1, 3
+				RR(j, j)=RR(j, j)+log(abs(Rt(j, j)))
 			end do
 
-			do it=1,ni
-				do j=1,ni
-					O(j,it)=0
-				end do
-			O(it,it)=1
+!			reset o
+			o = 0
+			do it= 1, 3
+				o(it,it) = 1
 			end do
 
-
-			do j=1,3
-			  lyn(j)=RR(j,j)
+			do j = 1, 3
+			  lyn(j) = RR(j, j)
 			end do
 
 			if (mod(ijk, 10000) == 0)then
-				write(10, "(101e20.12)") i * h, lyn/ijk/h
+				write(10, "(101e20.12)") i * h, lyn / ijk / h
 			end if
-
 			if (mod(ijk,100000) == 0) then			
-				write (*,*) i * h, lyn/ijk/h
+				write (*,*) i * h, lyn / ijk / h
 			end if
-
 			
 		end if
 		
 	end do
 	
-		
 end program
 
 
@@ -168,53 +166,59 @@ end program
 			f =x * y - c * z
 		end if
 	end function f
-	
-	
-	SUBROUTINE ddqrdcmp(a,n,np,c,d,sing)
+
+
+
+
+	SUBROUTINE ddqrdcmp(a, n, c, d, sing)
 	implicit none
 		INTEGER n,np
-		REAL(8) a(np,np),c(n),d(n)
-		LOGICAL sing
-		INTEGER i,j,k
-		REAL(8) scale,sigma,sum,tau
+		REAL(8) :: a(n, n), c(n), d(n)
+		LOGICAL :: sing
+		INTEGER :: i, j, k
+		REAL(8) :: scale, sigma, sum, tau
 
-		sing=.false.
+		sing = .false.
 
-		do k=1,n-1
-			scale=0.
-			do i=k,n
-				scale=max(scale,abs(a(i,k)))
+		do k = 1, n-1
+			scale = 0.
+			do i = k, n
+				scale = max(scale, abs(a(i, k)))
 			end do
-			if(scale==0.)then
-				sing=.true.
-				c(k)=0.
-				d(k)=0.
+
+			if(scale == 0.)then
+				sing = .true.
+				c(k) = 0.
+				d(k) = 0.
 			else
-				do i=k,n
-					a(i,k)=a(i,k)/scale
+				do i = k, n
+					a(i, k) = a(i, k) / scale
 				end do
-				sum=0.
-				do i=k,n
-					sum=sum+a(i,k)**2
+				sum = 0.
+				do i=k, n
+					sum = sum + a(i,k) ** 2
 				end do
-				sigma=sign(sqrt(sum),a(k,k))
-				a(k,k)=a(k,k)+sigma
-				c(k)=sigma*a(k,k)
-				d(k)=-scale*sigma
-				do j=k+1,n
-					sum=0.
-					do i=k,n
-						sum=sum+a(i,k)*a(i,j)
+				sigma = sign(sqrt(sum), a(k, k))
+				a(k, k) = a(k, k) + sigma
+				c(k) = sigma * a(k, k)
+				d(k) = -scale * sigma
+				do j=k + 1, n
+					sum = 0.
+					do i = k, n
+						sum = sum + a(i, k) * a(i, j)
 					end do
-					tau=sum/c(k)
-					do i=k,n
-						a(i,j)=a(i,j)-tau*a(i,k)
+					tau = sum / c(k)
+					do i = k, n
+						a(i, j) = a(i, j) - tau * a(i, k)
 					end do
 				end do
 			end if
 		end do
-		
-		d(n)=a(n,n)
-		if(d(n).eq.0.)sing=.true.
-		
+
+		d(n)=a(n, n)
+
+		if(d(n) == 0.) then
+			sing=.true.
+		end if
+
 	END
